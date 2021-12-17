@@ -3,33 +3,38 @@ FROM ubuntu:18.04
 # Image containing:
 # base Ubuntu:18.04
 # 1.  utility apps
-# 2.  Java (1.8)
+# 2.  Java (11)
 # 3.  Maven (3.5.4)
 # 4.  Node.js (8.9.4)
 # 5.  NPM (5.6.0)
 # 6.  Yarn (1.5.1)
 # 7.  Bower (1.8.2)
-# 8.  Gradle (6.0.1)
+# 8.  Gradle (6.8.2)
 # 9.  python 2.7 + 3.6 + pip + pip3 + pipenv
 # 10. [optional] python 3.7
 # 11. [optional] python 3.8
-# 12. Poetry (python)
-# 13. Ruby, rbenv and ruby-build
-# 14. Go (1.12.6)
-# 15. Scala 2.12.6, Sbt 1.1.6
-# 16. PHP (7.2)
-# 17. Composer
-# 18. PHP Plugins
-# 19. Mix, Hex, Erlang and Elixir
-# 20. Cocoapods (1.5.3)
-# 21. R + Packrat
-# 22. Haskel + Cabal
-# 23. Paket
-# 24. dotnet-sdk-2.2,dotnet cli and NuGet
-# 25. Cargo
+# 12. [optional] pyenv python any
+# 13. Poetry (python)
+# 14. Ruby, rbenv and ruby-build
+# 15. Go (1.17.5)
+# 16. Scala 2.12.6, Sbt 1.1.6
+# 17. PHP (7.2)
+# 18. Composer
+# 19. PHP Plugins
+# 20. Mix, Hex, Erlang and Elixir
+# 21. Cocoapods (1.5.3)
+# 22. R + Packrat
+# 23. Haskel + Cabal
+# 24. Paket
+# 25. dotnet-sdk-2.2,dotnet cli and NuGet
+# 26. Cargo
+
+ARG python_version=3.10.0
+# List from https://github.com/pyenv/pyenv/wiki#suggested-build-environment:
+ARG python_build_deps="make build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev wget curl llvm libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev"
 
 ENV DEBIAN_FRONTEND noninteractive
-ENV JAVA_HOME       /usr/lib/jvm/java-8-openjdk-amd64
+ENV JAVA_HOME       /usr/lib/jvm/openjdk-11-jdk-amd64
 ENV PATH 	    	$JAVA_HOME/bin:$PATH
 ENV LANGUAGE	en_US.UTF-8
 ENV LANG    	en_US.UTF-8
@@ -61,26 +66,26 @@ RUN groupadd ${WSS_GROUP} && \
 	passwd -d ${WSS_USER}
 
 
-### Install Java openjdk 8
+### Install Java openjdk 11
 RUN echo "deb http://ppa.launchpad.net/openjdk-r/ppa/ubuntu bionic main" | tee /etc/apt/sources.list.d/ppa_openjdk-r.list && \
     apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys DA1A4A13543B466853BAF164EB9B1D8886F44E2A && \
     apt-get update && \
-    apt-get -y install openjdk-8-jdk && \
+    apt-get -y install openjdk-11-jdk && \
     apt-get clean && \
 	rm -rf /var/lib/apt/lists/* && \
 	rm -rf /tmp/*
 
 
-### Install Maven (3.5.4)
-ARG MAVEN_VERSION=3.5.4
-ARG MAVEN_VERSION_SHA=CE50B1C91364CB77EFE3776F756A6D92B76D9038B0A0782F7D53ACF1E997A14D
-ARG MAVEN_BASE_URL=https://apache.osuosl.org/maven/maven-3/${MAVEN_VERSION}/binaries
+### Install Maven (3.8.4)
+ARG MAVEN_VERSION=3.8.4
+ARG MAVEN_VERSION_SHA=a9b2d825eacf2e771ed5d6b0e01398589ac1bfa4171f36154d1b5787879605507802f699da6f7cfc80732a5282fd31b28e4cd6052338cbef0fa1358b48a5e3c8
+ARG MAVEN_BASE_URL=https://dlcdn.apache.org/maven/maven-3/${MAVEN_VERSION}/binaries
 ENV MAVEN_HOME /usr/share/maven
 ENV MAVEN_CONFIG ${WSS_USER_HOME}/.m2
 
 RUN mkdir -p /usr/share/maven /usr/share/maven/ref && \
 	curl -fsSL -o /tmp/apache-maven.tar.gz ${MAVEN_BASE_URL}/apache-maven-${MAVEN_VERSION}-bin.tar.gz && \
-	echo "${MAVEN_VERSION_SHA}  /tmp/apache-maven.tar.gz" | sha256sum -c - && \
+	echo "${MAVEN_VERSION_SHA}  /tmp/apache-maven.tar.gz" | sha512sum -c - && \
 	tar -xzf /tmp/apache-maven.tar.gz -C /usr/share/maven --strip-components=1 && \
 	rm -f /tmp/apache-maven.tar.gz && \
 	ln -s /usr/share/maven/bin/mvn /usr/bin/mvn && \
@@ -100,12 +105,12 @@ RUN apt-get update && \
 ### Install Yarn
 RUN npm i -g yarn@1.5.1
 
-#### Install Bower + provide premmsions
+#### Install Bower + provide permissions
 #RUN npm i -g bower --allow-root && \
 #	echo '{ "allow_root": true }' > ${WSS_USER_HOME}/.bowerrc && \
 #	chown -R ${WSS_USER}:${WSS_GROUP} ${WSS_USER_HOME}/.bowerrc
 
-ARG GRADLE_VERSION=6.0.1
+ARG GRADLE_VERSION=6.8.2
 
 ### Install Gradle
 RUN wget -q https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip && \
@@ -166,6 +171,20 @@ RUN python -m pip install --upgrade pip && \
 #    chmod +x /usr/bin/conda
 
 
+# Install pyenv:
+RUN apt-get install -y curl git
+ENV PYENV_ROOT /root/.pyenv
+ENV PATH $PYENV_ROOT/shims:$PYENV_ROOT/bin:$PATH
+RUN curl https://pyenv.run | bash
+RUN pyenv update
+
+# Install Python:
+RUN echo $python_build_deps | xargs apt-get install -y --no-install-recommends
+RUN CONFIGURE_OPTS=--enable-shared pyenv install $python_version && \
+    pyenv global $python_version && \
+    pyenv rehash
+
+
 #### Install Poetry (python)
 #### requires python3.X version matching the projects (defaults to python3.6)
 #### sed command sets the default selected python-executable used by poetry to be 'python3'
@@ -176,6 +195,13 @@ RUN python -m pip install --upgrade pip && \
 #	chown -R ${WSS_USER}:${WSS_GROUP} ${WSS_USER_HOME}/.poetry && \
 #	rm -rf get-poetry.py
 #ENV PATH ${WSS_USER_HOME}/.poetry/bin:${PATH}
+
+ENV POETRY_HOME ${WSS_USER_HOME}/.poetry
+RUN curl -sSL https://install.python-poetry.org | python3 - && \
+	chown -R ${WSS_USER}:${WSS_GROUP} ${WSS_USER_HOME}/.poetry && \
+	rm -rf get-poetry.py
+ENV PATH ${WSS_USER_HOME}/.poetry/bin:${PATH}
+# RUN poetry config virtualenvs.create true && poetry config virtualenvs.in-project true
 
 
 #### Install Ruby
@@ -198,7 +224,7 @@ RUN python -m pip install --upgrade pip && \
 
 
 #### Install GO:
-# ARG GOLANG_VERSION=1.17.1
+# ARG GOLANG_VERSION=1.17.5
 #USER ${WSS_USER}
 #RUN mkdir -p ${WSS_USER_HOME}/goroot && \
 #   curl https://storage.googleapis.com/golang/go${GOLANG_VERSION}.linux-amd64.tar.gz | tar xvzf - -C ${WSS_USER_HOME}/goroot --strip-components=1
@@ -217,7 +243,7 @@ RUN python -m pip install --upgrade pip && \
 ## RUN go install  github.com/golang/dep/cmd/dep@latest
 ## RUN go install github.com/Masterminds/glide@latest
 ## RUN curl https://glide.sh/get | sh
-#USER root
+USER root
 
 
 #### Important note ###
@@ -279,11 +305,11 @@ RUN python -m pip install --upgrade pip && \
 
 
 #### Install Cocoapods
-#RUN gem install cocoapods -v 1.10.2
-#RUN adduser cocoapods
-#USER cocoapods
-#RUN pod setup
-#USER root
+RUN gem install cocoapods -v 1.11.2
+RUN adduser cocoapods
+USER cocoapods
+RUN pod setup
+USER root
 
 
 #### Install R and Packrat
@@ -373,13 +399,13 @@ RUN python -m pip install --upgrade pip && \
 
 
 #### Install Cargo
-#ENV HOME ${WSS_USER_HOME}
-#RUN curl https://sh.rustup.rs -sSf | sh -s -- -y && \
-#	chown -R ${WSS_USER}:${WSS_GROUP} ${WSS_USER_HOME}/.cargo && \
-#	chown -R ${WSS_USER}:${WSS_GROUP} ${WSS_USER_HOME}/.rustup && \
-#	rm -rf /tmp/*
-#ENV PATH $HOME/.cargo/bin:$PATH
-#ENV HOME /root
+ENV HOME ${WSS_USER_HOME}
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y && \
+	chown -R ${WSS_USER}:${WSS_GROUP} ${WSS_USER_HOME}/.cargo && \
+	chown -R ${WSS_USER}:${WSS_GROUP} ${WSS_USER_HOME}/.rustup && \
+	rm -rf /tmp/*
+ENV PATH $HOME/.cargo/bin:$PATH
+ENV HOME /root
 
 ### Switch User ###
 ENV HOME ${WSS_USER_HOME}
@@ -388,7 +414,8 @@ USER ${WSS_USER}
 
 ### copy data to the image
 # COPY wss wss
-# COPY <data-dir> Data
+# COPY wss wss
+# COPY TARGETDIR Data
 
 ### base command
-# CMD java -jar ./wss/wss-unified-agent.jar -c ./wss/wss-unified-agent.config -d ./Data`
+CMD java -jar ./wss/wss-unified-agent.jar -c ./wss/wss-unified-agent.config -d ./Data
