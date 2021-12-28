@@ -4,7 +4,7 @@ FROM ubuntu:18.04
 # base Ubuntu:18.04
 # 1.  utility apps
 # 2.  Java (11)
-# 3.  Maven (3.5.4)
+# 3.  Maven (3.8.4)
 # 4.  Node.js (8.9.4)
 # 5.  NPM (5.6.0)
 # 6.  Yarn (1.5.1)
@@ -16,7 +16,7 @@ FROM ubuntu:18.04
 # 12. [optional] pyenv python any
 # 13. Poetry (python)
 # 14. Ruby, rbenv and ruby-build
-# 15. Go (1.17.5)
+# 15. Go (1.12.6)
 # 16. Scala 2.12.6, Sbt 1.1.6
 # 17. PHP (7.2)
 # 18. Composer
@@ -29,17 +29,9 @@ FROM ubuntu:18.04
 # 25. dotnet-sdk-2.2,dotnet cli and NuGet
 # 26. Cargo
 
-ARG python_version=3.10.0
-# List from https://github.com/pyenv/pyenv/wiki#suggested-build-environment:
-ARG python_build_deps="make build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev wget curl llvm libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev"
-
 ENV DEBIAN_FRONTEND noninteractive
-ENV JAVA_HOME       /usr/lib/jvm/openjdk-11-jdk-amd64
+ENV JAVA_HOME       /usr/lib/jvm/java-11-openjdk-amd64
 ENV PATH 	    	$JAVA_HOME/bin:$PATH
-ENV LANGUAGE	en_US.UTF-8
-ENV LANG    	en_US.UTF-8
-ENV LC_ALL  	en_US.UTF-8
-
 
 ### Install wget, curl, git, unzip, gnupg, locales
 RUN apt-get update && \
@@ -55,6 +47,10 @@ RUN apt-get update && \
 	rm -rf /var/lib/apt/lists/* && \
 	rm -rf /tmp/*
 
+ENV LANGUAGE	en_US.UTF-8
+ENV LANG    	en_US.UTF-8
+ENV LC_ALL  	en_US.UTF-8
+
 
 ### add a new group + user without root premmsions
 ENV WSS_GROUP wss-group
@@ -64,7 +60,6 @@ ENV WSS_USER_HOME=/home/${WSS_USER}
 RUN groupadd ${WSS_GROUP} && \
 	useradd --gid ${WSS_GROUP} --groups 0 --shell /bin/bash --home-dir ${WSS_USER_HOME} --create-home ${WSS_USER} && \
 	passwd -d ${WSS_USER}
-
 
 ### Install Java openjdk 11
 RUN echo "deb http://ppa.launchpad.net/openjdk-r/ppa/ubuntu bionic main" | tee /etc/apt/sources.list.d/ppa_openjdk-r.list && \
@@ -79,7 +74,7 @@ RUN echo "deb http://ppa.launchpad.net/openjdk-r/ppa/ubuntu bionic main" | tee /
 ### Install Maven (3.8.4)
 ARG MAVEN_VERSION=3.8.4
 ARG MAVEN_VERSION_SHA=a9b2d825eacf2e771ed5d6b0e01398589ac1bfa4171f36154d1b5787879605507802f699da6f7cfc80732a5282fd31b28e4cd6052338cbef0fa1358b48a5e3c8
-ARG MAVEN_BASE_URL=https://dlcdn.apache.org/maven/maven-3/${MAVEN_VERSION}/binaries
+ARG MAVEN_BASE_URL=https://apache.osuosl.org/maven/maven-3/${MAVEN_VERSION}/binaries
 ENV MAVEN_HOME /usr/share/maven
 ENV MAVEN_CONFIG ${WSS_USER_HOME}/.m2
 
@@ -105,13 +100,12 @@ RUN apt-get update && \
 ### Install Yarn
 RUN npm i -g yarn@1.5.1
 
-#### Install Bower + provide permissions
-#RUN npm i -g bower --allow-root && \
-#	echo '{ "allow_root": true }' > ${WSS_USER_HOME}/.bowerrc && \
-#	chown -R ${WSS_USER}:${WSS_GROUP} ${WSS_USER_HOME}/.bowerrc
+#### Install Bower + provide permssions
+RUN npm i -g bower --allow-root && \
+	echo '{ "allow_root": true }' > ${WSS_USER_HOME}/.bowerrc && \
+	chown -R ${WSS_USER}:${WSS_GROUP} ${WSS_USER_HOME}/.bowerrc
 
 ARG GRADLE_VERSION=6.8.2
-
 ### Install Gradle
 RUN wget -q https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip && \
     unzip gradle-${GRADLE_VERSION}-bin.zip -d /opt && \
@@ -121,6 +115,34 @@ RUN wget -q https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-b
 ENV GRADLE_HOME /opt/gradle-${GRADLE_VERSION}
 ENV PATH $PATH:/opt/gradle-${GRADLE_VERSION}/bin
 
+# download and install Kotlin compiler
+# https://github.com/JetBrains/kotlin/releases/latest
+ARG KOTLIN_VERSION=1.5.31
+RUN cd /opt && \
+    wget -q https://github.com/JetBrains/kotlin/releases/download/v${KOTLIN_VERSION}/kotlin-compiler-${KOTLIN_VERSION}.zip && \
+    unzip *kotlin*.zip && \
+    rm *kotlin*.zip
+ENV KOTLIN_HOME /opt/kotlinc
+
+### Download and install Android SDK : https://developer.android.com/studio#command-tools
+ARG ANDROID_SDK_VERSION=7583922
+ENV ANDROID_SDK_HOME /opt/android-sdk
+ENV ANDROID_SDK_ROOT /opt/android-sdk
+RUN mkdir -p ${ANDROID_SDK_ROOT}/cmdline-tools && \
+    wget -q https://dl.google.com/android/repository/commandlinetools-linux-${ANDROID_SDK_VERSION}_latest.zip && \
+    unzip *tools*linux*.zip -d ${ANDROID_SDK_ROOT}/cmdline-tools && \
+    mv ${ANDROID_SDK_ROOT}/cmdline-tools/cmdline-tools ${ANDROID_SDK_ROOT}/cmdline-tools/tools && \
+    rm *tools*linux*.zip
+
+ENV PATH ${PATH}:${GRADLE_HOME}/bin:${KOTLIN_HOME}/bin:${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin:${ANDROID_SDK_ROOT}/cmdline-tools/tools/bin:${ANDROID_SDK_ROOT}/platform-tools:${ANDROID_SDK_ROOT}/emulator
+# WORKAROUND: for issue https://issuetracker.google.com/issues/37137213
+ENV LD_LIBRARY_PATH ${ANDROID_SDK_ROOT}/emulator/lib64:${ANDROID_SDK_ROOT}/emulator/lib64/qt/lib
+# patch emulator issue: Running as root without --no-sandbox is not supported. See https://crbug.com/638180.
+# https://doc.qt.io/qt-5/qtwebengine-platform-notes.html#sandboxing-support
+ENV QTWEBENGINE_DISABLE_SANDBOX 1
+
+### Accept the license agreements of the SDK components
+RUN yes | sdkmanager --licenses
 
 ### Install all the python2.7 + python3.6 packages
 RUN apt-get update && \
@@ -148,8 +170,8 @@ RUN python -m pip install --upgrade pip && \
 #    rm -rf /tmp/*
 
 
-#### optional: python3.8 (used with UA flag: 'python.path')
-#RUN apt-get update && \
+### optional: python3.8 (used with UA flag: 'python.path')
+# RUN apt-get update && \
 #    apt-get install -y python3.8 python3.8-venv && \
 #    python3.8 -m pip install --upgrade pip && \
 #    apt-get clean && \
@@ -171,20 +193,6 @@ RUN python -m pip install --upgrade pip && \
 #    chmod +x /usr/bin/conda
 
 
-# Install pyenv:
-RUN apt-get install -y curl git
-ENV PYENV_ROOT /root/.pyenv
-ENV PATH $PYENV_ROOT/shims:$PYENV_ROOT/bin:$PATH
-RUN curl https://pyenv.run | bash
-RUN pyenv update
-
-# Install Python:
-RUN echo $python_build_deps | xargs apt-get install -y --no-install-recommends
-RUN CONFIGURE_OPTS=--enable-shared pyenv install $python_version && \
-    pyenv global $python_version && \
-    pyenv rehash
-
-
 #### Install Poetry (python)
 #### requires python3.X version matching the projects (defaults to python3.6)
 #### sed command sets the default selected python-executable used by poetry to be 'python3'
@@ -203,42 +211,41 @@ RUN curl -sSL https://install.python-poetry.org | python3 - && \
 ENV PATH ${WSS_USER_HOME}/.poetry/bin:${PATH}
 # RUN poetry config virtualenvs.create true && poetry config virtualenvs.in-project true
 
-
 #### Install Ruby
-#RUN apt-get update && \
-#	apt-get install -y ruby ruby-dev ruby-bundler && \
-#    apt-get clean && \
-#	rm -rf /var/lib/apt/lists/* && \
-#	rm -rf /tmp/*
+RUN apt-get update && \
+	apt-get install -y ruby ruby-dev ruby-bundler && \
+	apt-get clean && \
+	rm -rf /var/lib/apt/lists/* && \
+	rm -rf /tmp/*
 
 
 #### Install rbenv and ruby-build
 ### or maybe be saved to /etc/profile instead of /etc/profile.d/
-#RUN git clone https://github.com/sstephenson/rbenv.git ${WSS_USER_HOME}/.rbenv; \
-#	git clone https://github.com/sstephenson/ruby-build.git ${WSS_USER_HOME}/.rbenv/plugins/ruby-build; \
-#	${WSS_USER_HOME}/.rbenv/plugins/ruby-build/install.sh && \
-#	echo 'eval "$(rbenv init -)"' >> /etc/profile.d/rbenv.sh && \
-#	echo 'eval "$(rbenv init -)"' >> ${WSS_USER_HOME}/.bashrc && \
-#	chown -R ${WSS_USER}:${WSS_GROUP} ${WSS_USER_HOME}/.rbenv ${WSS_USER_HOME}/.bashrc
-#ENV PATH ${WSS_USER_HOME}/.rbenv/bin:$PATH
+RUN git clone https://github.com/sstephenson/rbenv.git ${WSS_USER_HOME}/.rbenv; \
+	git clone https://github.com/sstephenson/ruby-build.git ${WSS_USER_HOME}/.rbenv/plugins/ruby-build; \
+	${WSS_USER_HOME}/.rbenv/plugins/ruby-build/install.sh && \
+	echo 'eval "$(rbenv init -)"' >> /etc/profile.d/rbenv.sh && \
+	echo 'eval "$(rbenv init -)"' >> ${WSS_USER_HOME}/.bashrc && \
+	chown -R ${WSS_USER}:${WSS_GROUP} ${WSS_USER_HOME}/.rbenv ${WSS_USER_HOME}/.bashrc
+ENV PATH ${WSS_USER_HOME}/.rbenv/bin:$PATH
 
 
 #### Install GO:
-# ARG GOLANG_VERSION=1.17.5
-#USER ${WSS_USER}
-#RUN mkdir -p ${WSS_USER_HOME}/goroot && \
-#   curl https://storage.googleapis.com/golang/go${GOLANG_VERSION}.linux-amd64.tar.gz | tar xvzf - -C ${WSS_USER_HOME}/goroot --strip-components=1
-### Set GO environment variables
-#ENV GOROOT ${WSS_USER_HOME}/goroot
-#ENV GOPATH ${WSS_USER_HOME}/gopath
-#ENV PATH $GOROOT/bin:$GOPATH/bin:$PATH
+ARG GOLANG_VERSION=1.17.5
+USER ${WSS_USER}
+RUN mkdir -p ${WSS_USER_HOME}/goroot && \
+	curl https://storage.googleapis.com/golang/go${GOLANG_VERSION}.linux-amd64.tar.gz | tar xvzf - -C ${WSS_USER_HOME}/goroot --strip-components=1
+## Set GO environment variables
+ENV GOROOT ${WSS_USER_HOME}/goroot
+ENV GOPATH ${WSS_USER_HOME}/gopath
+ENV PATH $GOROOT/bin:$GOPATH/bin:$PATH
 ### Install package managers
 #
-#RUN go install github.com/tools/godep@latest
-#RUN go install github.com/LK4D4/vndr@latest
-#RUN go install  github.com/kardianos/govendor@latest
+RUN go install github.com/tools/godep@latest
+RUN go install github.com/LK4D4/vndr@latest
+RUN go install github.com/kardianos/govendor@latest
 #
-##All Deparacted/archived go package managers
+##All Deprecated/archived go package managers
 ## RUN go install  github.com/gpmgo/gopm@latest
 ## RUN go install  github.com/golang/dep/cmd/dep@latest
 ## RUN go install github.com/Masterminds/glide@latest
@@ -252,13 +259,12 @@ USER root
 ####    SBT
 ####    Mix/ Hex/ Erlang/ Elixir
 ####    dotnet/nuget cli's
-#RUN apt-get update && \
-#	apt-get install -y --force-yes build-essential && \
-#	apt-get install -y --force-yes zlib1g-dev libssl-dev libreadline-dev libyaml-dev libxml2-dev libxslt-dev && \
-#	apt-get clean && \
-#	rm -rf /var/lib/apt/lists/* && \
-#	rm -rf /tmp/*
-
+RUN apt-get update && \
+	apt-get install -y --force-yes build-essential && \
+	apt-get install -y --force-yes zlib1g-dev libssl-dev libreadline-dev libyaml-dev libxml2-dev libxslt-dev && \
+	apt-get clean && \
+	rm -rf /var/lib/apt/lists/* && \
+	rm -rf /tmp/*
 
 #### Install Scala
 # ARG SCALA_VERSION=2.12.6
@@ -273,55 +279,75 @@ USER root
 #ENV PATH $PATH:$SBT_HOME
 
 
-#### Install PHP
-#RUN apt-get update && \
-#	apt-get install -y php7.2 && \
-#	apt-get clean && \
-#	rm -rf /var/lib/apt/lists/* && \
-#	rm -rf /tmp/*
-### Install Composer
-#RUN curl -s https://getcomposer.org/installer | php
-#RUN mv composer.phar /usr/local/bin/composer
-### Install PHP Plugins
-#RUN apt-get update && \
-#	apt-get install -y php7.2-mbstring && \
-#	apt-get install -y php7.2-dom && \
-#	apt-get clean && \
-#	rm -rf /var/lib/apt/lists/* && \
-#	rm -rf /tmp/*
+# #### Install PHP
+# RUN apt-get update && \
+# 	apt-get install -y php7.2 && \
+# 	apt-get clean && \
+# 	rm -rf /var/lib/apt/lists/*||true && \
+# 	rm -rf /tmp/*||true
+# ### Install Composer
+# RUN whereis php
+# RUN curl -s https://getcomposer.org/installer | php7.2
+# RUN mv composer.phar /usr/local/bin/composer
+# ## Install PHP Plugins
+# RUN apt-get update && \
+# 	apt-get install -y php7.2-mbstring && \
+# 	apt-get install -y php7.2-dom && \
+# 	apt-get clean && \
+# 	rm -rf /var/lib/apt/lists/*||true && \
+# 	rm -rf /tmp/*||true
+
+# https://hub.docker.com/r/phpdockerio/php72-cli/dockerfile
+# Install Ondrej repos for Ubuntu Bionic, PHP7.2, composer and selected extensions - better selection than
+# the distro's packages
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gnupg \
+    && echo "deb http://ppa.launchpad.net/ondrej/php/ubuntu bionic main" > /etc/apt/sources.list.d/ondrej-php.list \
+    && apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 4F4EA0AAE5267A6C \
+    && apt-get update \
+    && apt-get update \
+    && apt-get -y --no-install-recommends install curl ca-certificates unzip \
+        php7.2-cli php7.2-curl php7.2-dom php-apcu php-apcu-bc \
+        php7.2-json php7.2-mbstring php7.2-opcache php7.2-readline php7.2-xml php7.2-zip \
+    && curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer \
+    && composer clear-cache \
+    && apt-get clean 
+	# \
+    # && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /usr/share/doc/* ~/.composer||true
 
 
 #### Install Mix/ Hex/ Erlang/ Elixir
-#RUN wget https://packages.erlang-solutions.com/erlang-solutions_2.0_all.deb && \
-#	dpkg -i erlang-solutions_2.0_all.deb && \
-#	apt-get update && \
-#	apt-get install esl-erlang -y && \
-#	apt-get install elixir -y && \
-#	mix local.hex --force && \
-#	rm erlang-solutions_2.0_all.deb && \
-#	apt-get clean && \
-#	rm -rf /var/lib/apt/lists/* && \
-#	rm -rf /tmp/*
+USER root
+RUN wget https://packages.erlang-solutions.com/erlang-solutions_2.0_all.deb && dpkg -i erlang-solutions_2.0_all.deb && \
+	apt-get update && \
+	apt-get install esl-erlang -y && \
+	apt-get install elixir -y && \
+	mix local.hex --force && \
+	rm erlang-solutions_2.0_all.deb && \
+	apt-get clean && \
+	rm -rf /var/lib/apt/lists/* && \
+	rm -rf /tmp/*
 
 
 #### Install Cocoapods
-RUN gem install cocoapods -v 1.11.2
+RUN gem install cocoapods -v 1.10.2
 RUN adduser cocoapods
 USER cocoapods
 RUN pod setup
 USER root
 
 
-#### Install R and Packrat
-#RUN apt-get update && \
-#	apt-get install -y r-base libopenblas-base r-base gdebi && \
-#	wget https://download1.rstudio.org/rstudio-xenial-1.1.419-amd64.deb && \
-#	gdebi rstudio-xenial-1.1.419-amd64.deb && \
-#	rm rstudio-xenial-1.1.419-amd64.deb && \
-#	R -e 'install.packages("packrat" , repos="http://cran.us.r-project.org");'  && \
-#	apt-get clean && \
-#	rm -rf /var/lib/apt/lists/* && \
-#	rm -rf /tmp/*
+# #### Install R and Packrat
+# RUN apt-get update && \
+# 	apt-get install -y r-base libopenblas-base r-base gdebi && \
+# 	wget https://download1.rstudio.org/rstudio-xenial-1.1.419-amd64.deb && \
+# 	gdebi rstudio-xenial-1.1.419-amd64.deb && \
+# 	rm rstudio-xenial-1.1.419-amd64.deb && \
+# 	R -e 'install.packages("packrat" , repos="http://cran.us.r-project.org");'  && \
+# 	apt-get clean 
+	# && \
+	# rm -rf /var/lib/apt/lists/* && \
+	# rm -rf /tmp/*
 
 
 #### Install Cabal
@@ -338,23 +364,26 @@ USER root
 #	rm -rf /tmp/*
 #ENV PATH /opt/ghc/bin:$PATH
 
-
-#### Install dotnet cli and Nuget
-#RUN wget -q https://packages.microsoft.com/config/ubuntu/18.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb && \
-#	dpkg -i packages-microsoft-prod.deb && \
-#	apt-get update && \
-#	apt-get install -y apt-transport-https && \
-#	apt-get install -y dotnet-sdk-2.2 && \
-#	apt-get install -y dotnet-sdk-3.1 && \
-#	apt-get install -y dotnet-sdk-5.0 && \
-#	rm packages-microsoft-prod.deb && \
-#	apt-get clean && \
-#	rm -rf /var/lib/apt/lists/* && \
-#	rm -rf /tmp/*
+# Disable Telemetry
+# ---------
+# The .NET Core tools collect usage data in order to help us improve your experience. It is collected by Microsoft and shared with the community. You can opt-out of telemetry by setting the DOTNET_CLI_TELEMETRY_OPTOUT environment variable to '1' or 'true' using your favorite shell.
+# ENV DOTNET_CLI_TELEMETRY_OPTOUT=true
+# #### Install dotnet cli and Nuget
+# RUN wget -q https://packages.microsoft.com/config/ubuntu/18.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb && \
+# 	dpkg -i packages-microsoft-prod.deb && \
+# 	apt-get update && \
+# 	apt-get install -y apt-transport-https && \
+# 	apt-get install -y dotnet-sdk-2.2 && \
+# 	apt-get install -y dotnet-sdk-3.1 && \
+# 	apt-get install -y dotnet-sdk-5.0 && \
+# 	rm packages-microsoft-prod.deb && \
+# 	apt-get clean && \
+# 	rm -rf /var/lib/apt/lists/* && \
+# 	rm -rf /tmp/*
 
 
 ### Install Mono
-#RUN apt-get update && \
+# RUN apt-get update && \
 #    apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 3FA7E0328081BFF6A14DA29AA6A19B38D3D831EF && \
 #    apt-get install -y --no-install-recommends apt-transport-https ca-certificates && \
 #    echo "deb https://download.mono-project.com/repo/ubuntu bionic main" | tee /etc/apt/sources.list.d/mono-official-stable.list && \
@@ -365,19 +394,19 @@ USER root
 #    rm -rf /tmp/*
 
 #### Install Nuget CLI
-#RUN TMP=/tmp/nuget  && \
+# RUN TMP=/tmp/nuget  && \
 #    LIB=/usr/local/lib && \
 #    BIN=/usr/local/bin && \
 #    rm -rf $TMP $LIB/nuget $BIN/nuget && \
 #    mkdir -p $TMP && \
 #    cd $TMP && \
 #    wget -O nuget.zip https://www.nuget.org/api/v2/package/NuGet.CommandLine/5.10.0 && \
-#	 unzip nuget.zip && \
+# 	 unzip nuget.zip && \
 #    install -d $LIB/nuget  && \
 #    install ./tools/NuGet.exe $LIB/nuget/ && \
-#	 echo '#!/usr/bin/env bash\nexec mono /usr/local/lib/nuget/NuGet.exe "$@"\n' > $BIN/nuget && \
-#	 chmod a+x $BIN/nuget && \
-#	 rm -rf $TMP
+# 	 echo '#!/usr/bin/env bash\nexec mono /usr/local/lib/nuget/NuGet.exe "$@"\n' > $BIN/nuget && \
+# 	 chmod a+x $BIN/nuget && \
+# 	 rm -rf $TMP
 
 
 ## Install Paket
@@ -417,5 +446,29 @@ USER ${WSS_USER}
 # COPY wss wss
 # COPY TARGETDIR Data
 
+USER root
+### Update and install using sdkmanager
+RUN sdkmanager "tools" "platform-tools" | grep -v = || true
+# RUN sdkmanager "build-tools;29.0.2" "build-tools;28.0.3" "build-tools;27.0.3" | grep -v = || true
+RUN sdkmanager "build-tools;29.0.2" | grep -v = || true
+# RUN sdkmanager "platforms;android-28" "platforms;android-27" "platforms;android-26" | grep -v = || true
+RUN sdkmanager "platforms;android-26" | grep -v = || true
+RUN sdkmanager "extras;android;m2repository" "extras;google;m2repository" | grep -v = || true
+RUN sdkmanager --install 'ndk;21.0.6113669'
 ### base command
-CMD java -jar ./wss/wss-unified-agent.jar -c ./wss/wss-unified-agent.config -d ./Data
+USER ${WSS_USER}
+
+
+ENV WS_APIKEY=${WS_APIKEY:-False}
+ENV WS_USERKEY=${WS_USERKEY:-False}
+ENV WS_PRODUCTNAME=
+ENV WS_PRODUCTVERSION=
+ENV WS_PROJECTNAME=
+ENV WS_PROJECTVERSION=
+COPY wss-unified-agent.jar /home/${WSS_USER}/wss-unified-agent.jar
+COPY wss-unified-agent.config /home/${WSS_USER}/wss-unified-agent.config
+# For mounting via CLI this works
+CMD java -jar /home/${WSS_USER}/wss-unified-agent.jar -c /home/${WSS_USER}/wss-unified-agent.config -d ./Data
+
+# mount whatever path is mounted in CI
+# CMD java -jar /home/${WSS_USER}/wss-unified-agent.jar -c /home/${WSS_USER}/wss-unified-agent.config -d .
